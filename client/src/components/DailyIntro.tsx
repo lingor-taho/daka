@@ -75,7 +75,7 @@ export default function DailyIntro() {
       </div>
 
       <div className="intro-message">
-        <span>GOOD MORNING</span>
+        <span>GOOD MORNING · おはよう</span>
         <h1>新的一天开始了</h1>
         <p>大家要开心哦～</p>
       </div>

@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, api, getDeviceCode, jsonBody } from "../api";
+import CheckoutOutro from "../components/CheckoutOutro";
+import DailyIntro from "../components/DailyIntro";
 import GanttBoard from "../components/GanttBoard";
 import Modal from "../components/Modal";
 import { formatAppTime, useAppTimeZone, type AppTimeZone } from "../timeZone";
@@ -193,8 +195,19 @@ export default function FrontPage() {
     );
   }
 
+  if (currentEmployee?.attendance.status === "checked_out") {
+    return (
+      <CheckoutOutro
+        employeeName={currentEmployee.name}
+        checkoutTime={formatAppTime(currentEmployee.attendance.clockOutAt, displayTimeZone)}
+      />
+    );
+  }
+
   return (
-    <main className="front-page">
+    <>
+      <DailyIntro />
+      <main className="front-page">
       <header className="front-header">
         <div className="brand-lockup">
           <div className="brand-mark">K</div>
@@ -274,7 +287,7 @@ export default function FrontPage() {
         />
       </section>
 
-      {currentEmployee?.attendance.status !== "checked_out" ? (
+      {currentEmployee ? (
         <button
           type="button"
           className="mobile-checkout"
@@ -363,6 +376,7 @@ export default function FrontPage() {
           </label>
         </Modal>
       ) : null}
-    </main>
+      </main>
+    </>
   );
 }

@@ -411,6 +411,319 @@ a {
   }
 }
 
+.checkout-outro {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  color: #fff8ef;
+  background:
+    linear-gradient(180deg, #6f9fc3 0%, #e3a985 49%, #f28a67 76%, #a84855 100%);
+  animation: outro-sky-shift 5.8s ease-in-out forwards;
+}
+
+.checkout-outro::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(176deg, transparent 20%, rgba(255, 188, 151, 0.38) 43%, transparent 55%),
+    linear-gradient(187deg, transparent 29%, rgba(255, 221, 181, 0.3) 46%, transparent 58%);
+  opacity: 0;
+  animation: outro-cloud-color 3.2s ease 1.5s forwards;
+}
+
+.outro-sky-haze {
+  position: absolute;
+  z-index: 1;
+  left: -15%;
+  width: 130%;
+  height: 26%;
+  border-radius: 50%;
+  filter: blur(18px);
+  opacity: 0;
+  transform: rotate(-4deg) scaleX(0.8);
+}
+
+.outro-sky-haze-one {
+  top: 20%;
+  background: linear-gradient(90deg, transparent, rgba(255, 201, 160, 0.78), transparent);
+  animation: outro-haze-in 2.4s ease 1.2s forwards;
+}
+
+.outro-sky-haze-two {
+  top: 40%;
+  background: linear-gradient(90deg, transparent, rgba(213, 73, 83, 0.55), transparent);
+  animation: outro-haze-in 2.8s ease 2s forwards;
+}
+
+.outro-sun {
+  position: absolute;
+  z-index: 2;
+  top: 12%;
+  left: 50%;
+  width: 150px;
+  height: 150px;
+  display: grid;
+  place-items: center;
+  transform: translateX(-50%);
+  animation: outro-sunset 5s cubic-bezier(0.42, 0.08, 0.58, 1) forwards;
+}
+
+.outro-sun::before {
+  content: "";
+  position: absolute;
+  width: 330px;
+  height: 330px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 211, 141, 0.58), transparent 68%);
+  animation: outro-sun-glow 2.4s ease-in-out infinite;
+}
+
+.outro-sun-core {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #fff2ae, #ffbd68 55%, #f06b55);
+  box-shadow:
+    0 0 36px rgba(255, 196, 107, 0.96),
+    0 0 94px rgba(245, 113, 84, 0.62);
+}
+
+.outro-cloud {
+  position: absolute;
+  z-index: 3;
+  width: 210px;
+  height: 42px;
+  border-radius: 999px;
+  background: rgba(255, 219, 207, 0.52);
+  filter: drop-shadow(0 10px 18px rgba(98, 47, 66, 0.14));
+}
+
+.outro-cloud i {
+  position: absolute;
+  bottom: 7px;
+  display: block;
+  border-radius: 50%;
+  background: inherit;
+}
+
+.outro-cloud i:first-child {
+  left: 30px;
+  width: 83px;
+  height: 70px;
+}
+
+.outro-cloud i:last-child {
+  right: 25px;
+  width: 67px;
+  height: 57px;
+}
+
+.outro-cloud-one {
+  top: 19%;
+  left: -230px;
+  animation: outro-cloud-right 12s linear forwards;
+}
+
+.outro-cloud-two {
+  top: 34%;
+  right: -220px;
+  opacity: 0.65;
+  transform: scale(0.72);
+  animation: outro-cloud-left 13s linear forwards;
+}
+
+.outro-landscape {
+  position: absolute;
+  z-index: 3;
+  inset: auto 0 0;
+  height: 42%;
+}
+
+.outro-ridge {
+  position: absolute;
+  left: 50%;
+  bottom: -25%;
+  width: 90vw;
+  height: 45vw;
+  max-height: 520px;
+  border-radius: 50% 50% 0 0;
+  transform-origin: center bottom;
+}
+
+.outro-ridge-back {
+  left: 25%;
+  background: linear-gradient(165deg, #5e6b69, #384e50);
+  transform: translateX(-50%) rotate(6deg);
+  opacity: 0.9;
+}
+
+.outro-ridge-front {
+  left: 76%;
+  bottom: -37%;
+  background: linear-gradient(165deg, #3d5151, #172f35);
+  transform: translateX(-50%) rotate(-7deg);
+  box-shadow: 0 -18px 70px rgba(70, 33, 42, 0.16);
+}
+
+.outro-message {
+  position: relative;
+  z-index: 6;
+  width: min(680px, calc(100% - 40px));
+  margin-top: -5vh;
+  padding: 27px 34px 31px;
+  text-align: center;
+  border: 1px solid rgba(255, 238, 225, 0.36);
+  border-radius: 28px;
+  background: rgba(92, 34, 52, 0.25);
+  box-shadow: 0 28px 80px rgba(70, 24, 42, 0.22);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  transform: translateY(28px);
+  animation: outro-message-in 950ms cubic-bezier(0.2, 0.78, 0.3, 1) 3.4s forwards;
+}
+
+.outro-message span {
+  display: inline-block;
+  color: #ffe1bd;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+}
+
+.outro-message h1 {
+  margin: 12px 0 4px;
+  color: white;
+  font-size: clamp(34px, 5vw, 58px);
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  text-shadow: 0 4px 22px rgba(82, 25, 42, 0.24);
+}
+
+.outro-message p {
+  margin: 8px 0 0;
+  color: #fff1df;
+  font-size: clamp(18px, 2.3vw, 25px);
+  font-weight: 600;
+}
+
+.outro-employee {
+  position: absolute;
+  z-index: 7;
+  top: 22px;
+  right: 24px;
+  min-width: 160px;
+  padding: 11px 15px;
+  display: grid;
+  gap: 2px;
+  color: #fff4e9;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 14px;
+  background: rgba(79, 39, 56, 0.22);
+  backdrop-filter: blur(9px);
+  opacity: 0;
+  animation: intro-fade-in 600ms ease 3.8s forwards;
+}
+
+.outro-employee span {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.outro-employee strong {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.82;
+}
+
+.outro-tomorrow {
+  position: absolute;
+  z-index: 7;
+  right: 24px;
+  bottom: 18px;
+  margin: 0;
+  color: rgba(255, 240, 226, 0.78);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  opacity: 0;
+  animation: intro-fade-in 600ms ease 4.1s forwards;
+}
+
+@keyframes outro-sky-shift {
+  0% {
+    background-color: #7fafca;
+    filter: saturate(0.85) brightness(1.08);
+  }
+  55% {
+    background-color: #df7d69;
+    filter: saturate(1.16) brightness(1);
+  }
+  100% {
+    background-color: #9b4458;
+    filter: saturate(1.28) brightness(0.9);
+  }
+}
+
+@keyframes outro-sunset {
+  0% {
+    top: 10%;
+    transform: translateX(-50%) scale(1);
+  }
+  65% {
+    top: 52%;
+    transform: translateX(-50%) scale(0.92);
+  }
+  100% {
+    top: 72%;
+    transform: translateX(-50%) scale(0.76);
+  }
+}
+
+@keyframes outro-sun-glow {
+  50% {
+    opacity: 0.72;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes outro-haze-in {
+  to {
+    opacity: 1;
+    transform: rotate(-1deg) scaleX(1);
+  }
+}
+
+@keyframes outro-cloud-color {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes outro-cloud-right {
+  to {
+    transform: translateX(calc(100vw + 460px));
+  }
+}
+
+@keyframes outro-cloud-left {
+  to {
+    transform: translateX(calc(-100vw - 440px)) scale(0.72);
+  }
+}
+
+@keyframes outro-message-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .boot-screen {
   min-height: 100vh;
   display: grid;
@@ -2420,6 +2733,50 @@ a {
     transform: translateX(50%);
   }
 
+  .outro-sun {
+    width: 120px;
+    height: 120px;
+  }
+
+  .outro-sun-core {
+    width: 82px;
+    height: 82px;
+  }
+
+  .outro-message {
+    width: calc(100% - 30px);
+    margin-top: -8vh;
+    padding: 23px 16px 27px;
+    border-radius: 23px;
+  }
+
+  .outro-message span {
+    font-size: 9px;
+    letter-spacing: 0.12em;
+  }
+
+  .outro-message h1 {
+    font-size: 34px;
+  }
+
+  .outro-message p {
+    font-size: 18px;
+  }
+
+  .outro-employee {
+    top: 14px;
+    right: 14px;
+  }
+
+  .outro-tomorrow {
+    right: 50%;
+    bottom: 14px;
+    width: max-content;
+    max-width: calc(100% - 28px);
+    transform: translateX(50%);
+    text-align: center;
+  }
+
   .front-header {
     height: 64px;
     padding: 0 14px;
@@ -2641,6 +2998,10 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .checkout-outro,
+  .checkout-outro *,
+  .checkout-outro *::before,
+  .checkout-outro *::after,
   .daily-intro *,
   .daily-intro *::before,
   .daily-intro *::after {
