@@ -24,11 +24,11 @@ if not exist "node_modules\" (
   )
 )
 
-powershell.exe -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 14100 -State Listen -ErrorAction SilentlyContinue) { exit 1 }"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\stop-port.ps1" -Port 14100
 if errorlevel 1 (
   echo.
-  echo [ERROR] Port 14100 is already in use.
-  echo Close the previous KUMOHIRO Daka window, then run this file again.
+  echo [ERROR] Port 14100 could not be released.
+  echo Run this BAT as administrator and try again.
   echo.
   pause
   exit /b 1

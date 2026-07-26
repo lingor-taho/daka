@@ -57,7 +57,7 @@ PowerShell 中运行：
 2. 设置长度至少 32 位的随机 `SESSION_SECRET` 和非默认的管理员初始密码。
 3. 将 `APP_ORIGIN` 改为 `https://daka.kumohiro.com`。
 4. 运行 `.\scripts\build-production.ps1`。
-5. 用 `.\scripts\start-api.ps1` 启动 API。
+5. 用 `.\scripts\start-api.ps1` 启动前端与 API 服务。
 6. 参考 `deploy/nginx-daka.conf.example` 配置现有 Windows Nginx。
 
 建议用 Windows“任务计划程序”在开机时运行：
