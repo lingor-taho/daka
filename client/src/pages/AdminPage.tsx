@@ -7,6 +7,7 @@ import {
   Clock3,
   Database,
   Download,
+  Globe2,
   LayoutDashboard,
   LogOut,
   MonitorSmartphone,
@@ -21,10 +22,17 @@ import {
   UsersRound
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { api, formatChinaTime, getDeviceCode, jsonBody, todayInChina } from "../api";
+import { api, getDeviceCode, jsonBody } from "../api";
 import GanttBoard from "../components/GanttBoard";
 import Modal from "../components/Modal";
 import RichTextEditor from "../components/RichTextEditor";
+import {
+  addDays,
+  formatAppTime,
+  todayInTimeZone,
+  useAppTimeZone,
+  type AppTimeZone
+} from "../timeZone";
 import type {
   AttendanceRecord,
   DaySchedule,
@@ -280,7 +288,8 @@ function TaskForm({
 }
 
 function ScheduleTab() {
-  const [date, setDate] = useState(todayInChina());
+  const { displayTimeZone } = useAppTimeZone();
+  const [date, setDate] = useState(todayInTimeZone(displayTimeZone));
   const [schedule, setSchedule] = useState<DaySchedule | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [editing, setEditing] = useState<{ task?: Task; employee: EmployeeSchedule } | null>(null);
@@ -441,12 +450,13 @@ function TemplateForm({
   onSave: (value: TemplateFormValue) => Promise<void>;
   onDelete?: (effectiveFrom: string) => Promise<void>;
 }) {
+  const { displayTimeZone } = useAppTimeZone();
   const [title, setTitle] = useState(initial?.title ?? "");
   const [descriptionHtml, setDescriptionHtml] = useState(initial?.descriptionHtml ?? "");
   const [startHour, setStartHour] = useState(initial?.startHour ?? 9);
   const [endHour, setEndHour] = useState(initial?.endHour ?? 10);
   const [weekdays, setWeekdays] = useState(initial?.weekdays ?? [1, 2, 3, 4, 5]);
-  const [effectiveFrom, setEffectiveFrom] = useState(todayInChina());
+  const [effectiveFrom, setEffectiveFrom] = useState(todayInTimeZone(displayTimeZone));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -502,13 +512,16 @@ function TemplateForm({
           <span>生效日期</span>
           <div className="date-with-shortcut">
             <input type="date" value={effectiveFrom} onChange={(event) => setEffectiveFrom(event.target.value)} />
-            <button type="button" onClick={() => setEffectiveFrom(todayInChina())}>今天</button>
+            <button
+              type="button"
+              onClick={() => setEffectiveFrom(todayInTimeZone(displayTimeZone))}
+            >
+              今天
+            </button>
             <button
               type="button"
               onClick={() => {
-                const tomorrow = new Date(`${todayInChina()}T12:00:00+08:00`);
-                tomorrow.setDate(tomorrow.getDate() + 1);
-                setEffectiveFrom(new Intl.DateTimeFormat("en-CA").format(tomorrow));
+                setEffectiveFrom(addDays(todayInTimeZone(displayTimeZone), 1));
               }}
             >
               明天
@@ -807,6 +820,7 @@ function EmployeeForm({
 }
 
 function DevicesTab() {
+  const { displayTimeZone } = useAppTimeZone();
   const [devices, setDevices] = useState<Device[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [binding, setBinding] = useState<Device | null>(null);
@@ -848,7 +862,9 @@ function DevicesTab() {
                 <h3>{device.label || "未命名设备"}</h3>
                 <p>{device.employee_name ? `${device.employee_name} · ${device.position || "未设置岗位"}` : "尚未绑定员工"}</p>
                 <code>{device.device_code}</code>
-                <small>最后访问：{formatChinaTime(device.last_seen_at, true)}</small>
+                <small>
+                  最后访问：{formatAppTime(device.last_seen_at, displayTimeZone, true)}
+                </small>
               </div>
               <div className="device-actions">
                 {pending ? (
@@ -935,10 +951,11 @@ function DevicesTab() {
 }
 
 function AttendanceTab() {
+  const { displayTimeZone } = useAppTimeZone();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [start, setStart] = useState(`${todayInChina().slice(0, 7)}-01`);
-  const [end, setEnd] = useState(todayInChina());
+  const [start, setStart] = useState(`${todayInTimeZone(displayTimeZone).slice(0, 7)}-01`);
+  const [end, setEnd] = useState(todayInTimeZone(displayTimeZone));
   const [employeeId, setEmployeeId] = useState(0);
   const [editing, setEditing] = useState<AttendanceRecord | null>(null);
 
@@ -1008,8 +1025,12 @@ function AttendanceTab() {
                 <tr key={record.id}>
                   <td data-label="日期">{record.attendance_date}</td>
                   <td data-label="员工"><strong>{record.name}</strong><small>{record.position}</small></td>
-                  <td data-label="上班">{formatChinaTime(record.clock_in_at)}</td>
-                  <td data-label="退勤">{formatChinaTime(record.clock_out_at)}</td>
+                  <td data-label="上班">
+                    {formatAppTime(record.clock_in_at, displayTimeZone)}
+                  </td>
+                  <td data-label="退勤">
+                    {formatAppTime(record.clock_out_at, displayTimeZone)}
+                  </td>
                   <td data-label="时长">{duration == null ? "—" : `${duration.toFixed(1)}h`}</td>
                   <td data-label="状态">
                     <span className={`table-status ${record.clock_out_at ? "success" : "warning"}`}>
@@ -1040,13 +1061,13 @@ function AttendanceTab() {
   );
 }
 
-function toLocalInput(value: string | null) {
+function toLocalInput(value: string | null, timeZone: AppTimeZone) {
   if (!value) return "";
   const date = new Date(value);
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
+    timeZone,
     year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false
+    hour: "2-digit", minute: "2-digit", hour12: false, hourCycle: "h23"
   }).formatToParts(date);
   const map = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
   return `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}`;
@@ -1061,8 +1082,9 @@ function AttendanceEditModal({
   onClose: () => void;
   onSave: (value: { clockInAt: string; clockOutAt: string; checkoutNote: string; reason: string }) => Promise<void>;
 }) {
-  const [clockInAt, setClockInAt] = useState(toLocalInput(record.clock_in_at));
-  const [clockOutAt, setClockOutAt] = useState(toLocalInput(record.clock_out_at));
+  const { displayTimeZone } = useAppTimeZone();
+  const [clockInAt, setClockInAt] = useState(toLocalInput(record.clock_in_at, displayTimeZone));
+  const [clockOutAt, setClockOutAt] = useState(toLocalInput(record.clock_out_at, displayTimeZone));
   const [checkoutNote, setCheckoutNote] = useState(record.checkout_note);
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1095,11 +1117,27 @@ function AttendanceEditModal({
 }
 
 function SettingsTab({ admin, onPasswordChanged }: { admin: AdminUser; onPasswordChanged: () => void }) {
+  const {
+    displayTimeZone: activeDisplayTimeZone,
+    setDisplayTimeZone
+  } = useAppTimeZone();
   const [fallbackStartHour, setFallbackStartHour] = useState(9);
   const [fallbackEndHour, setFallbackEndHour] = useState(18);
+  const [serverTimeZone, setServerTimeZone] = useState<AppTimeZone>("Asia/Shanghai");
+  const [selectedDisplayTimeZone, setSelectedDisplayTimeZone] =
+    useState<AppTimeZone>(activeDisplayTimeZone);
+  const [timeZoneOptions, setTimeZoneOptions] = useState<
+    Array<{ value: AppTimeZone; label: string }>
+  >([
+    { value: "Asia/Shanghai", label: "中国时间" },
+    { value: "Asia/Tokyo", label: "日本时间" }
+  ]);
+  const [settingsMessage, setSettingsMessage] = useState("");
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [purgeStart, setPurgeStart] = useState(`${todayInChina().slice(0, 7)}-01`);
-  const [purgeEnd, setPurgeEnd] = useState(todayInChina());
+  const [purgeStart, setPurgeStart] = useState(
+    `${todayInTimeZone(activeDisplayTimeZone).slice(0, 7)}-01`
+  );
+  const [purgeEnd, setPurgeEnd] = useState(todayInTimeZone(activeDisplayTimeZone));
   const [purgeEmployeeIds, setPurgeEmployeeIds] = useState<number[]>([]);
   const [purgeTypes, setPurgeTypes] = useState(["attendance"]);
   const [purgePassword, setPurgePassword] = useState("");
@@ -1108,14 +1146,43 @@ function SettingsTab({ admin, onPasswordChanged }: { admin: AdminUser; onPasswor
 
   useEffect(() => {
     void Promise.all([
-      api<{ settings: { fallbackStartHour: number; fallbackEndHour: number } }>("/api/admin/settings"),
+      api<{
+        settings: {
+          fallbackStartHour: number;
+          fallbackEndHour: number;
+          serverTimeZone: AppTimeZone;
+          displayTimeZone: AppTimeZone;
+        };
+        timeZoneOptions: Array<{ value: AppTimeZone; label: string }>;
+      }>("/api/admin/settings"),
       api<{ employees: Employee[] }>("/api/admin/employees")
     ]).then(([settingsResult, employeeResult]) => {
       setFallbackStartHour(settingsResult.settings.fallbackStartHour);
       setFallbackEndHour(settingsResult.settings.fallbackEndHour);
+      setServerTimeZone(settingsResult.settings.serverTimeZone);
+      setSelectedDisplayTimeZone(settingsResult.settings.displayTimeZone);
+      setTimeZoneOptions(settingsResult.timeZoneOptions);
       setEmployees(employeeResult.employees);
     });
   }, []);
+
+  async function saveSettings() {
+    setSettingsMessage("");
+    const result = await api<{ ok: boolean; displayTimeZone: AppTimeZone }>(
+      "/api/admin/settings",
+      {
+        method: "PUT",
+        body: jsonBody({
+          fallbackStartHour,
+          fallbackEndHour,
+          serverTimeZone,
+          displayTimeZone: selectedDisplayTimeZone
+        })
+      }
+    );
+    setDisplayTimeZone(result.displayTimeZone);
+    setSettingsMessage("设置已保存，页面时间已按新时区换算。");
+  }
 
   const purgePayload = {
     start: purgeStart,
@@ -1129,9 +1196,51 @@ function SettingsTab({ admin, onPasswordChanged }: { admin: AdminUser; onPasswor
       <SectionHeader
         eyebrow="SYSTEM SETTINGS"
         title="系统设置"
-        description="维护无任务日时间轴、管理员密码，以及受保护的历史数据清理。"
+        description="维护时区换算、无任务日时间轴、管理员密码，以及受保护的历史数据清理。"
       />
+      {settingsMessage ? <div className="inline-alert">{settingsMessage}</div> : null}
       <div className="settings-grid">
+        <section className="settings-card">
+          <div className="settings-card-icon"><Globe2 size={21} /></div>
+          <h2>系统时区</h2>
+          <p>服务器时间先转换为统一时间点，再按程序显示时区呈现。</p>
+          <label className="field">
+            <span>服务器时区</span>
+            <select
+              value={serverTimeZone}
+              onChange={(event) => setServerTimeZone(event.target.value as AppTimeZone)}
+            >
+              {timeZoneOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}（{option.value}）
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>程序显示时区</span>
+            <select
+              value={selectedDisplayTimeZone}
+              onChange={(event) =>
+                setSelectedDisplayTimeZone(event.target.value as AppTimeZone)
+              }
+            >
+              {timeZoneOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}（{option.value}）
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="info-note">
+            当前换算：{serverTimeZone === "Asia/Shanghai" ? "中国时间 UTC+8" : "日本时间 UTC+9"}
+            {" → "}
+            {selectedDisplayTimeZone === "Asia/Shanghai" ? "中国时间 UTC+8" : "日本时间 UTC+9"}
+          </div>
+          <button className="button primary" type="button" onClick={() => void saveSettings()}>
+            <Save size={16} /> 保存时区设置
+          </button>
+        </section>
         <section className="settings-card">
           <div className="settings-card-icon"><Clock3 size={21} /></div>
           <h2>默认时间轴</h2>
@@ -1143,10 +1252,7 @@ function SettingsTab({ admin, onPasswordChanged }: { admin: AdminUser; onPasswor
           <button
             className="button primary"
             type="button"
-            onClick={() => api("/api/admin/settings", {
-              method: "PUT",
-              body: jsonBody({ fallbackStartHour, fallbackEndHour })
-            })}
+            onClick={() => void saveSettings()}
           ><Save size={16} /> 保存时间轴</button>
         </section>
         <section className="settings-card">

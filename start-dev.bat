@@ -24,17 +24,46 @@ if not exist "node_modules\" (
   )
 )
 
+powershell.exe -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 3101 -State Listen -ErrorAction SilentlyContinue) { exit 1 }"
+if errorlevel 1 (
+  echo.
+  echo [ERROR] Port 3101 is already in use.
+  echo Close the previous KUMOHIRO Daka window, then run this file again.
+  echo.
+  pause
+  exit /b 1
+)
+
 echo.
-echo Starting KUMOHIRO Daka...
-echo Frontend: http://127.0.0.1:5173/
-echo Admin:    http://127.0.0.1:5173/admin
+echo Preparing KUMOHIRO Daka...
+call npm.cmd run build
+if errorlevel 1 (
+  echo.
+  echo [ERROR] Frontend build failed.
+  pause
+  exit /b 1
+)
+
+cls
+echo ========================================================
+echo   KUMOHIRO Daka is starting...
+echo ========================================================
 echo.
-echo Keep this window open while using the application.
-echo Closing this window will stop both the frontend and API services.
+echo Frontend: http://127.0.0.1:3101/
+echo Admin:    http://127.0.0.1:3101/admin
+echo.
+echo Keep this window open. Closing it will stop the service.
+echo There is no automatic restart or page refresh in this mode.
+echo ========================================================
 echo.
 
-call npm.cmd run dev
+set "SERVE_CLIENT=1"
+set "PORT=3101"
+
+start "" /b powershell.exe -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 2; Start-Process 'http://127.0.0.1:3101/'"
+
+node.exe server\src\index.js
 
 echo.
-echo The services have stopped.
+echo The service has stopped.
 pause

@@ -13,7 +13,8 @@ export const config = {
   initialAdminUsername: process.env.INITIAL_ADMIN_USERNAME ?? "admin",
   initialAdminPassword: process.env.INITIAL_ADMIN_PASSWORD ?? "admin123",
   isProduction: process.env.NODE_ENV === "production",
-  trustProxy: process.env.TRUST_PROXY === "1"
+  trustProxy: process.env.TRUST_PROXY === "1",
+  serveClient: process.env.SERVE_CLIENT === "1"
 };
 
 if (config.isProduction) {

@@ -24,17 +24,24 @@ import {
   latestTemplateVersions
 } from "./schedule.js";
 import {
+  TIME_ZONE_OPTIONS,
+  appDate,
+  appDateTime,
   asBoolean,
-  chinaDate,
-  chinaDateTime,
   cleanRichText,
+  formatAppDateTime,
+  getDisplayTimeZone,
+  getServerTimeZone,
   hashToken,
   httpError,
   parseDate,
   randomId,
   safeText,
+  setTimeZoneConfig,
+  validateTimeZone,
   validateTimeRange,
-  validateWeekdays
+  validateWeekdays,
+  zonedLocalDateTimeToIso
 } from "./utils.js";
 
 const app = express();
@@ -77,7 +84,9 @@ function requireString(value, name, max = 100) {
 function normalizeDateTime(value) {
   const text = String(value ?? "").trim();
   if (!text) return null;
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(text)) return `${text}:00+08:00`;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(text)) {
+    return zonedLocalDateTimeToIso(text);
+  }
   const date = new Date(text);
   if (Number.isNaN(date.getTime())) throw httpError(400, "日期时间格式无效");
   return date.toISOString();
@@ -88,7 +97,16 @@ function adminLog(action, entityType, entityId, detail = "") {
 }
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, time: chinaDateTime() });
+  res.json({
+    ok: true,
+    time: appDateTime(),
+    serverTimeZone: getServerTimeZone(),
+    displayTimeZone: getDisplayTimeZone()
+  });
+});
+
+app.get("/api/app-config", (_req, res) => {
+  res.json({ displayTimeZone: getDisplayTimeZone() });
 });
 
 app.get("/api/front/today", (req, res, next) => {
@@ -97,7 +115,7 @@ app.get("/api/front/today", (req, res, next) => {
     if (!deviceCode || deviceCode.length < 8) {
       throw httpError(400, "设备码无效", "INVALID_DEVICE_CODE");
     }
-    const now = chinaDateTime();
+    const now = appDateTime();
     db.prepare(
       `INSERT INTO devices (
          device_code, enabled, first_seen_at, last_seen_at, updated_at
@@ -125,7 +143,7 @@ app.get("/api/front/today", (req, res, next) => {
     }
 
     issueDeviceCookie(res, device);
-    const today = chinaDate();
+    const today = appDate();
     db.prepare(
       `INSERT INTO attendance (
          employee_id, attendance_date, clock_in_at, source_device_id, updated_at
@@ -134,6 +152,7 @@ app.get("/api/front/today", (req, res, next) => {
     ).run(device.employee_id, today, now, device.id, now);
 
     res.json({
+      displayTimeZone: getDisplayTimeZone(),
       device: {
         id: device.id,
         label: device.label,
@@ -148,8 +167,8 @@ app.get("/api/front/today", (req, res, next) => {
 
 app.post("/api/front/checkout", requireDevice, (req, res, next) => {
   try {
-    const today = chinaDate();
-    const now = chinaDateTime();
+    const today = appDate();
+    const now = appDateTime();
     const note = String(req.body?.note ?? "").trim().slice(0, 2000);
     db.prepare(
       `INSERT INTO attendance (
@@ -222,7 +241,7 @@ app.put("/api/admin/password", requireAdmin, asyncRoute(async (req, res) => {
   if (!(await bcrypt.compare(currentPassword, admin.password_hash))) {
     throw httpError(400, "当前密码不正确");
   }
-  const now = chinaDateTime();
+  const now = appDateTime();
   db.prepare(
     `UPDATE admins
      SET password_hash = ?, must_change_password = 0, updated_at = ?
@@ -237,7 +256,7 @@ app.put("/api/admin/password", requireAdmin, asyncRoute(async (req, res) => {
 app.use("/api/admin", requireAdmin);
 
 app.get("/api/admin/dashboard", (_req, res) => {
-  const today = chinaDate();
+  const today = appDate();
   const counts = {
     employees: db.prepare("SELECT COUNT(*) AS count FROM employees WHERE active = 1").get().count,
     pendingDevices: db.prepare("SELECT COUNT(*) AS count FROM devices WHERE enabled = 0 OR employee_id IS NULL").get().count,
@@ -264,7 +283,7 @@ app.post("/api/admin/employees", (req, res, next) => {
   try {
     const name = requireString(req.body?.name, "员工姓名", 80);
     const position = safeText(req.body?.position, 100);
-    const now = chinaDateTime();
+    const now = appDateTime();
     const nextOrder = db.prepare("SELECT COALESCE(MAX(display_order), 0) + 1 AS value FROM employees").get().value;
     const result = db.prepare(
       `INSERT INTO employees (name, position, active, display_order, created_at, updated_at)
@@ -284,7 +303,7 @@ app.put("/api/admin/employees/:id", (req, res, next) => {
     const name = requireString(req.body?.name, "员工姓名", 80);
     const position = safeText(req.body?.position, 100);
     const active = asBoolean(req.body?.active) ? 1 : 0;
-    const now = chinaDateTime();
+    const now = appDateTime();
     db.prepare(
       `UPDATE employees SET name = ?, position = ?, active = ?, updated_at = ? WHERE id = ?`
     ).run(name, position, active, now, employee.id);
@@ -300,7 +319,7 @@ app.post("/api/admin/employees/reorder", (req, res, next) => {
     const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number) : [];
     if (!ids.length) throw httpError(400, "员工顺序不能为空");
     const update = db.prepare("UPDATE employees SET display_order = ?, updated_at = ? WHERE id = ?");
-    const now = chinaDateTime();
+    const now = appDateTime();
     db.transaction(() => ids.forEach((id, index) => update.run(index + 1, now, id)))();
     adminLog("reorder", "employee", null, ids.join(","));
     res.json({ ok: true });
@@ -327,9 +346,9 @@ app.post("/api/admin/employees/:id/templates", (req, res, next) => {
     const description = cleanRichText(req.body?.descriptionHtml);
     const { startHour, endHour } = validateTimeRange(req.body?.startHour, req.body?.endHour);
     const weekdays = validateWeekdays(req.body?.weekdays);
-    const effectiveFrom = parseDate(req.body?.effectiveFrom ?? chinaDate());
+    const effectiveFrom = parseDate(req.body?.effectiveFrom ?? appDate());
     const taskKey = randomId();
-    const now = chinaDateTime();
+    const now = appDateTime();
     db.prepare(
       `INSERT INTO default_task_versions (
          task_key, employee_id, title, description_html, start_hour, end_hour,
@@ -368,8 +387,8 @@ app.put("/api/admin/templates/:taskKey", (req, res, next) => {
     const description = cleanRichText(req.body?.descriptionHtml);
     const { startHour, endHour } = validateTimeRange(req.body?.startHour, req.body?.endHour);
     const weekdays = validateWeekdays(req.body?.weekdays);
-    const effectiveFrom = parseDate(req.body?.effectiveFrom ?? chinaDate());
-    const now = chinaDateTime();
+    const effectiveFrom = parseDate(req.body?.effectiveFrom ?? appDate());
+    const now = appDateTime();
     db.prepare(
       `INSERT INTO default_task_versions (
          task_key, employee_id, title, description_html, start_hour, end_hour,
@@ -412,8 +431,8 @@ app.delete("/api/admin/templates/:taskKey", (req, res, next) => {
       )
       .get(req.params.taskKey);
     if (!previous) throw httpError(404, "默认任务不存在");
-    const effectiveFrom = parseDate(req.query.effectiveFrom ?? chinaDate());
-    const now = chinaDateTime();
+    const effectiveFrom = parseDate(req.query.effectiveFrom ?? appDate());
+    const now = appDateTime();
     db.prepare(
       `INSERT INTO default_task_versions (
          task_key, employee_id, title, description_html, start_hour, end_hour,
@@ -459,7 +478,7 @@ app.post("/api/admin/devices/register-current", (req, res, next) => {
   try {
     const deviceCode = safeText(req.body?.deviceCode, 160);
     if (!deviceCode || deviceCode.length < 8) throw httpError(400, "设备码无效");
-    const now = chinaDateTime();
+    const now = appDateTime();
     db.prepare(
       `INSERT INTO devices (
          device_code, enabled, first_seen_at, last_seen_at, updated_at
@@ -483,7 +502,7 @@ app.post("/api/admin/devices/:id/bind", (req, res, next) => {
     const device = db.prepare("SELECT * FROM devices WHERE id = ?").get(req.params.id);
     if (!device) throw httpError(404, "设备不存在");
     const label = safeText(req.body?.label, 120) || `${employee.name}的设备`;
-    const now = chinaDateTime();
+    const now = appDateTime();
     db.prepare(
       `UPDATE devices
        SET employee_id = ?, label = ?, enabled = 1, authorized_at = ?, updated_at = ?
@@ -503,7 +522,7 @@ app.post("/api/admin/devices/:id/unbind", (req, res, next) => {
     db.prepare(
       `UPDATE devices SET employee_id = NULL, enabled = 0, authorized_at = NULL, updated_at = ?
        WHERE id = ?`
-    ).run(chinaDateTime(), device.id);
+    ).run(appDateTime(), device.id);
     adminLog("unbind", "device", device.id);
     res.json({ ok: true });
   } catch (error) {
@@ -525,7 +544,7 @@ app.delete("/api/admin/devices/:id", (req, res, next) => {
 
 app.get("/api/admin/schedule", (req, res, next) => {
   try {
-    const date = parseDate(req.query.date ?? chinaDate());
+    const date = parseDate(req.query.date ?? appDate());
     res.json({ schedule: buildDaySchedule(date) });
   } catch (error) {
     next(error);
@@ -539,7 +558,7 @@ app.put("/api/admin/schedule/:date/default/:taskKey", (req, res, next) => {
     if (!base) throw httpError(404, "该日期没有此默认任务");
     const title = requireString(req.body?.title, "任务标题", 120);
     const description = cleanRichText(req.body?.descriptionHtml);
-    const now = chinaDateTime();
+    const now = appDateTime();
     db.prepare(
       `INSERT INTO daily_task_overrides (
          task_key, employee_id, task_date, title, description_html, created_at, updated_at
@@ -565,7 +584,7 @@ app.post("/api/admin/schedule/:date/tasks", (req, res, next) => {
     const title = requireString(req.body?.title, "任务标题", 120);
     const description = cleanRichText(req.body?.descriptionHtml);
     const { startHour, endHour } = validateTimeRange(req.body?.startHour, req.body?.endHour);
-    const now = chinaDateTime();
+    const now = appDateTime();
     const result = db.prepare(
       `INSERT INTO additional_tasks (
          employee_id, task_date, title, description_html, start_hour, end_hour,
@@ -593,7 +612,7 @@ app.put("/api/admin/tasks/:id", (req, res, next) => {
       `UPDATE additional_tasks
        SET employee_id = ?, title = ?, description_html = ?, start_hour = ?, end_hour = ?, updated_at = ?
        WHERE id = ?`
-    ).run(employeeId, title, description, startHour, endHour, chinaDateTime(), task.id);
+    ).run(employeeId, title, description, startHour, endHour, appDateTime(), task.id);
     adminLog("update", "additional_task", task.id, title);
     res.json({ ok: true });
   } catch (error) {
@@ -630,7 +649,7 @@ app.post("/api/admin/holidays", (req, res, next) => {
   try {
     const date = parseDate(req.body?.date);
     const name = safeText(req.body?.name, 100) || "全员休息日";
-    const now = chinaDateTime();
+    const now = appDateTime();
     db.prepare(
       `INSERT INTO holidays (holiday_date, name, created_at, updated_at)
        VALUES (?, ?, ?, ?)
@@ -656,7 +675,7 @@ app.delete("/api/admin/holidays/:date", (req, res, next) => {
 
 app.get("/api/admin/attendance", (req, res, next) => {
   try {
-    const start = parseDate(req.query.start ?? chinaDate());
+    const start = parseDate(req.query.start ?? appDate());
     const end = parseDate(req.query.end ?? start);
     const employeeId = Number(req.query.employeeId ?? 0);
     const rows = db
@@ -692,7 +711,7 @@ app.put("/api/admin/attendance/:id", (req, res, next) => {
     ) {
       throw httpError(400, "退勤时间不能早于上班时间");
     }
-    const now = chinaDateTime();
+    const now = appDateTime();
     db.transaction(() => {
       db.prepare(
         `UPDATE attendance
@@ -719,7 +738,7 @@ app.put("/api/admin/attendance/:id", (req, res, next) => {
 });
 
 app.get("/api/admin/attendance/export.xlsx", asyncRoute(async (req, res) => {
-  const start = parseDate(req.query.start ?? chinaDate());
+  const start = parseDate(req.query.start ?? appDate());
   const end = parseDate(req.query.end ?? start);
   const employeeId = Number(req.query.employeeId ?? 0);
   const rows = db
@@ -735,12 +754,13 @@ app.get("/api/admin/attendance/export.xlsx", asyncRoute(async (req, res) => {
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("考勤记录");
+  const displayTimeZoneLabel = TIME_ZONE_OPTIONS[getDisplayTimeZone()].label;
   sheet.columns = [
     { header: "日期", key: "date", width: 14 },
     { header: "员工", key: "name", width: 14 },
     { header: "岗位", key: "position", width: 18 },
-    { header: "上班时间", key: "clockIn", width: 24 },
-    { header: "退勤时间", key: "clockOut", width: 24 },
+    { header: `上班时间（${displayTimeZoneLabel}）`, key: "clockIn", width: 24 },
+    { header: `退勤时间（${displayTimeZoneLabel}）`, key: "clockOut", width: 24 },
     { header: "工作时长（小时）", key: "duration", width: 18 },
     { header: "状态", key: "status", width: 14 },
     { header: "退勤说明", key: "note", width: 40 }
@@ -757,8 +777,8 @@ app.get("/api/admin/attendance/export.xlsx", asyncRoute(async (req, res) => {
       date: row.attendance_date,
       name: row.name,
       position: row.position,
-      clockIn: row.clock_in_at ?? "",
-      clockOut: row.clock_out_at ?? "",
+      clockIn: formatAppDateTime(row.clock_in_at),
+      clockOut: formatAppDateTime(row.clock_out_at),
       duration: duration == null ? "" : Number(duration.toFixed(2)),
       status: !row.clock_in_at ? "未打卡" : row.clock_out_at ? "已退勤" : "缺少退勤",
       note: row.checkout_note
@@ -778,8 +798,14 @@ app.get("/api/admin/settings", (_req, res) => {
   res.json({
     settings: {
       fallbackStartHour: Number(setting("fallback_start_hour", "9")),
-      fallbackEndHour: Number(setting("fallback_end_hour", "18"))
-    }
+      fallbackEndHour: Number(setting("fallback_end_hour", "18")),
+      serverTimeZone: setting("server_timezone", "Asia/Shanghai"),
+      displayTimeZone: setting("display_timezone", "Asia/Tokyo")
+    },
+    timeZoneOptions: Object.entries(TIME_ZONE_OPTIONS).map(([value, option]) => ({
+      value,
+      label: option.label
+    }))
   });
 });
 
@@ -789,7 +815,9 @@ app.put("/api/admin/settings", (req, res, next) => {
       req.body?.fallbackStartHour,
       req.body?.fallbackEndHour
     );
-    const now = chinaDateTime();
+    const serverTimeZone = validateTimeZone(req.body?.serverTimeZone, "服务器时区");
+    const displayTimeZone = validateTimeZone(req.body?.displayTimeZone, "程序显示时区");
+    const now = appDateTime();
     const upsert = db.prepare(
       `INSERT INTO settings (setting_key, setting_value, updated_at)
        VALUES (?, ?, ?)
@@ -800,9 +828,17 @@ app.put("/api/admin/settings", (req, res, next) => {
     db.transaction(() => {
       upsert.run("fallback_start_hour", String(startHour), now);
       upsert.run("fallback_end_hour", String(endHour), now);
+      upsert.run("server_timezone", serverTimeZone, now);
+      upsert.run("display_timezone", displayTimeZone, now);
     })();
-    adminLog("update", "settings", null, `${startHour}-${endHour}`);
-    res.json({ ok: true });
+    setTimeZoneConfig(serverTimeZone, displayTimeZone);
+    adminLog(
+      "update",
+      "settings",
+      null,
+      JSON.stringify({ startHour, endHour, serverTimeZone, displayTimeZone })
+    );
+    res.json({ ok: true, displayTimeZone });
   } catch (error) {
     next(error);
   }
@@ -822,7 +858,7 @@ app.post("/api/admin/upload-image", upload.single("image"), (req, res, next) => 
       req.file.filename,
       req.file.mimetype,
       req.file.size,
-      chinaDateTime()
+      appDateTime()
     );
     adminLog("upload", "media", id, req.file.originalname);
     res.status(201).json({ id, url: `/api/media/${id}` });
@@ -933,6 +969,21 @@ app.get("/api/admin/audit", (req, res) => {
   });
 });
 
+if (config.serveClient) {
+  const clientDist = path.join(config.rootDir, "client", "dist");
+  const clientIndex = path.join(clientDist, "index.html");
+  if (!fs.existsSync(clientIndex)) {
+    throw new Error("未找到前端构建文件，请先运行 npm run build");
+  }
+  app.use(express.static(clientDist));
+  app.use((req, res, next) => {
+    if (req.method === "GET" && !req.path.startsWith("/api/")) {
+      return res.sendFile(clientIndex);
+    }
+    next();
+  });
+}
+
 app.use((req, _res, next) => {
   next(httpError(404, "接口不存在"));
 });
@@ -950,7 +1001,12 @@ app.use((error, _req, res, _next) => {
 });
 
 app.listen(config.port, config.host, () => {
-  console.log(`KUMOHIRO Daka API: http://${config.host}:${config.port}`);
+  if (config.serveClient) {
+    console.log(`KUMOHIRO Daka: http://${config.host}:${config.port}/`);
+    console.log(`管理后台: http://${config.host}:${config.port}/admin`);
+  } else {
+    console.log(`KUMOHIRO Daka API: http://${config.host}:${config.port}`);
+  }
   if (config.initialAdminPassword === "admin123") {
     console.warn("请登录后台后立即修改默认管理员密码。");
   }

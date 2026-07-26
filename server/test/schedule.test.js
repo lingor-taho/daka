@@ -12,10 +12,12 @@ process.env.INITIAL_ADMIN_PASSWORD = "test-password";
 const { db } = await import("../src/db.js");
 const { buildDaySchedule } = await import("../src/schedule.js");
 const {
-  chinaDate,
+  appDate,
   parseDate,
+  setTimeZoneConfig,
   validateTimeRange,
-  validateWeekdays
+  validateWeekdays,
+  zonedLocalDateTimeToIso
 } = await import("../src/utils.js");
 
 test.after(() => {
@@ -29,7 +31,18 @@ test("validates dates, hours and weekdays", () => {
   assert.deepEqual(validateWeekdays([5, 1, 1, 3]), [1, 3, 5]);
   assert.throws(() => validateTimeRange(10, 10), /结束时间/);
   assert.throws(() => validateWeekdays([]), /至少选择/);
-  assert.match(chinaDate(), /^\d{4}-\d{2}-\d{2}$/);
+  assert.throws(() => parseDate("2026-02-30"), /日期无效/);
+  assert.match(appDate(), /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test("converts server time to the configured display timezone", () => {
+  setTimeZoneConfig("Asia/Shanghai", "Asia/Tokyo");
+  const instant = new Date("2026-07-26T15:30:00.000Z");
+  assert.equal(appDate(instant), "2026-07-27");
+  assert.equal(
+    zonedLocalDateTimeToIso("2026-07-27T00:30", "Asia/Tokyo"),
+    "2026-07-26T15:30:00.000Z"
+  );
 });
 
 test("builds default, overridden and overlapping additional tasks", () => {
@@ -99,4 +112,3 @@ test("attendance uniqueness preserves the first clock-in", () => {
     .get(employeeId);
   assert.equal(row.clock_in_at, first);
 });
-

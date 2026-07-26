@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { config } from "./config.js";
 import { db } from "./db.js";
-import { chinaDateTime, hashToken, httpError } from "./utils.js";
+import { appDateTime, hashToken, httpError } from "./utils.js";
 
 const ADMIN_COOKIE = "daka_admin_session";
 const DEVICE_COOKIE = "daka_device_session";
@@ -13,7 +13,7 @@ export function createAdminSession(res, adminId) {
   db.prepare(
     `INSERT INTO admin_sessions (admin_id, token_hash, expires_at, created_at)
      VALUES (?, ?, ?, ?)`
-  ).run(adminId, hashToken(token), expires.toISOString(), chinaDateTime());
+  ).run(adminId, hashToken(token), expires.toISOString(), appDateTime());
   res.cookie(ADMIN_COOKIE, token, {
     httpOnly: true,
     secure: config.isProduction,
@@ -112,4 +112,3 @@ export function requireDevice(req, res, next) {
 export function canReadMedia(req) {
   return Boolean(getAdmin(req) || getAuthorizedDevice(req));
 }
-

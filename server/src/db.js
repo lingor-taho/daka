@@ -3,7 +3,7 @@ import path from "node:path";
 import bcrypt from "bcryptjs";
 import Database from "better-sqlite3";
 import { config } from "./config.js";
-import { chinaDateTime } from "./utils.js";
+import { appDateTime, setTimeZoneConfig } from "./utils.js";
 
 fs.mkdirSync(path.dirname(config.databasePath), { recursive: true });
 fs.mkdirSync(config.uploadDir, { recursive: true });
@@ -158,7 +158,7 @@ db.exec(`
   );
 `);
 
-const now = chinaDateTime();
+const now = appDateTime();
 const adminCount = db.prepare("SELECT COUNT(*) AS count FROM admins").get().count;
 if (adminCount === 0) {
   db.prepare(
@@ -179,15 +179,23 @@ const insertSetting = db.prepare(
 );
 insertSetting.run("fallback_start_hour", "9", now);
 insertSetting.run("fallback_end_hour", "18", now);
+insertSetting.run("server_timezone", "Asia/Shanghai", now);
+insertSetting.run("display_timezone", "Asia/Tokyo", now);
+
+setTimeZoneConfig(
+  db.prepare("SELECT setting_value FROM settings WHERE setting_key = 'server_timezone'").get()
+    ?.setting_value ?? "Asia/Shanghai",
+  db.prepare("SELECT setting_value FROM settings WHERE setting_key = 'display_timezone'").get()
+    ?.setting_value ?? "Asia/Tokyo"
+);
 
 export function audit(action, entityType, entityId = null, detail = "") {
   db.prepare(
     `INSERT INTO audit_logs (action, entity_type, entity_id, detail, created_at)
      VALUES (?, ?, ?, ?, ?)`
-  ).run(action, entityType, entityId == null ? null : String(entityId), detail, chinaDateTime());
+  ).run(action, entityType, entityId == null ? null : String(entityId), detail, appDateTime());
 }
 
 export function setting(key, fallback = "") {
   return db.prepare("SELECT setting_value FROM settings WHERE setting_key = ?").get(key)?.setting_value ?? fallback;
 }
-

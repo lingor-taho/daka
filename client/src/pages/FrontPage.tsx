@@ -9,28 +9,35 @@ import {
   Sparkles
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { ApiError, api, formatChinaTime, getDeviceCode, jsonBody } from "../api";
+import { ApiError, api, getDeviceCode, jsonBody } from "../api";
 import GanttBoard from "../components/GanttBoard";
 import Modal from "../components/Modal";
+import { formatAppTime, useAppTimeZone, type AppTimeZone } from "../timeZone";
 import type { DaySchedule, EmployeeSchedule, Task } from "../types";
 
 interface FrontPayload {
+  displayTimeZone: AppTimeZone;
   device: { id: number; label: string; employeeId: number };
   schedule: DaySchedule;
 }
 
-function dateLabel(date: string) {
-  const parsed = new Date(`${date}T12:00:00+08:00`);
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
+function dateLabel(date: string, timeZone: AppTimeZone) {
+  const parsed = new Date(`${date}T12:00:00Z`);
+  const datePart = new Intl.DateTimeFormat("zh-CN", {
+    timeZone,
     year: "numeric",
     month: "long",
-    day: "numeric",
+    day: "numeric"
+  }).format(parsed);
+  const weekdayPart = new Intl.DateTimeFormat("zh-CN", {
+    timeZone,
     weekday: "long"
   }).format(parsed);
+  return `${datePart} · ${weekdayPart}`;
 }
 
 export default function FrontPage() {
+  const { displayTimeZone, setDisplayTimeZone } = useAppTimeZone();
   const [payload, setPayload] = useState<FrontPayload | null>(null);
   const [pending, setPending] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -53,6 +60,7 @@ export default function FrontPage() {
     setMessage("");
     try {
       const result = await api<FrontPayload>("/api/front/today", { device: true });
+      setDisplayTimeZone(result.displayTimeZone);
       setPayload(result);
       setPending(false);
     } catch (error) {
@@ -199,10 +207,11 @@ export default function FrontPage() {
           <Clock3 size={17} />
           <strong>
             {new Intl.DateTimeFormat("zh-CN", {
-              timeZone: "Asia/Shanghai",
+              timeZone: displayTimeZone,
               hour: "2-digit",
               minute: "2-digit",
-              hour12: false
+              hour12: false,
+              hourCycle: "h23"
             }).format(now)}
           </strong>
           <button type="button" className="refresh-button" onClick={() => void load()}>
@@ -214,8 +223,7 @@ export default function FrontPage() {
       <section className="front-hero">
         <div>
           <span className="eyebrow">TODAY'S FLOW</span>
-          <h1>{dateLabel(payload.schedule.date)}</h1>
-          <p>按时间查看每位员工今天的工作安排，点击任务卡片查看详细说明。</p>
+          <h1>{dateLabel(payload.schedule.date, displayTimeZone)}</h1>
         </div>
         <div className="hero-status">
           <div className="status-icon">
@@ -228,7 +236,7 @@ export default function FrontPage() {
           </div>
           <div className="clock-in-chip">
             <span>上班记录</span>
-            <strong>{formatChinaTime(currentEmployee?.attendance.clockInAt)}</strong>
+            <strong>{formatAppTime(currentEmployee?.attendance.clockInAt, displayTimeZone)}</strong>
           </div>
         </div>
       </section>
@@ -249,7 +257,7 @@ export default function FrontPage() {
         <div className="section-heading">
           <div>
             <span className="eyebrow">DAILY GANTT</span>
-            <h2>今日工作甘特图</h2>
+            <h2>今日工作一览</h2>
           </div>
           <div className="legend">
             <span><i className="legend-default" />默认任务</span>
@@ -281,7 +289,6 @@ export default function FrontPage() {
 
       <footer className="front-footer">
         <span>设备：{payload.device.label || deviceCode.slice(0, 8)}</span>
-        <span>任务不会自动刷新，请在上班或需要更新时手动刷新页面。</span>
       </footer>
 
       {selectedTask ? (
@@ -359,4 +366,3 @@ export default function FrontPage() {
     </main>
   );
 }
-
