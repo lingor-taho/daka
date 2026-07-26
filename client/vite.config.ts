@@ -10,7 +10,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:3101",
+        target: "http://127.0.0.1:14100",
         changeOrigin: false
       }
     }
@@ -20,4 +20,3 @@ export default defineConfig({
     emptyOutDir: true
   }
 });
-

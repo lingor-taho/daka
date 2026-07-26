@@ -4,7 +4,7 @@ const rootDir = process.cwd();
 
 export const config = {
   rootDir,
-  port: Number.parseInt(process.env.PORT ?? "3101", 10),
+  port: Number.parseInt(process.env.PORT ?? "14100", 10),
   host: process.env.HOST ?? "127.0.0.1",
   databasePath: path.resolve(rootDir, process.env.DATABASE_PATH ?? "storage/database/daka.db"),
   uploadDir: path.resolve(rootDir, process.env.UPLOAD_DIR ?? "storage/uploads"),
