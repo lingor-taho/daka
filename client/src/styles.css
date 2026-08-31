@@ -1300,8 +1300,10 @@ a {
 
 .gantt-time-head {
   position: sticky;
-  min-width: 100%;
-  overflow: visible;
+  /* WebKit can resolve a percentage minimum against the entire board, not
+     this grid column. Let grid stretch the header and contain its tick labels. */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .hour-label {
