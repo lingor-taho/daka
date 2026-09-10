@@ -87,3 +87,22 @@ export interface AttendanceRecord {
   updated_at: string;
 }
 
+export type AttendanceDayStatus = "complete" | "working" | "incomplete" | "absent" | "rest" | "unscheduled" | "pending" | "future" | "untracked";
+
+export interface AttendanceDay {
+  date: string;
+  status: AttendanceDayStatus;
+  scheduled: boolean;
+  holiday: string | null;
+  record: AttendanceRecord | null;
+  editable: boolean;
+}
+
+export interface AttendanceMonth {
+  employee: Employee | null;
+  today: string;
+  month: string;
+  firstMonth: string;
+  currentMonth: string;
+  days: AttendanceDay[];
+}

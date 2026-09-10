@@ -6,7 +6,6 @@ import {
   ClipboardList,
   Clock3,
   Database,
-  Download,
   Globe2,
   LayoutDashboard,
   LogOut,
@@ -21,7 +20,8 @@ import {
   UserRoundCog,
   UsersRound
 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import AttendanceTab from "./AttendanceTab";
 import { api, getDeviceCode, jsonBody } from "../api";
 import GanttBoard from "../components/GanttBoard";
 import Modal from "../components/Modal";
@@ -34,7 +34,6 @@ import {
   type AppTimeZone
 } from "../timeZone";
 import type {
-  AttendanceRecord,
   DaySchedule,
   Device,
   Employee,
@@ -947,172 +946,6 @@ function DevicesTab() {
         </Modal>
       ) : null}
     </>
-  );
-}
-
-function AttendanceTab() {
-  const { displayTimeZone } = useAppTimeZone();
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [start, setStart] = useState(`${todayInTimeZone(displayTimeZone).slice(0, 7)}-01`);
-  const [end, setEnd] = useState(todayInTimeZone(displayTimeZone));
-  const [employeeId, setEmployeeId] = useState(0);
-  const [editing, setEditing] = useState<AttendanceRecord | null>(null);
-
-  async function load() {
-    const [recordResult, employeeResult] = await Promise.all([
-      api<{ attendance: AttendanceRecord[] }>(
-        `/api/admin/attendance?start=${start}&end=${end}&employeeId=${employeeId}`
-      ),
-      api<{ employees: Employee[] }>("/api/admin/employees")
-    ]);
-    setRecords(recordResult.attendance);
-    setEmployees(employeeResult.employees);
-  }
-
-  useEffect(() => { void load(); }, []);
-
-  const summary = useMemo(() => ({
-    complete: records.filter((record) => record.clock_in_at && record.clock_out_at).length,
-    missing: records.filter((record) => record.clock_in_at && !record.clock_out_at).length,
-    totalHours: records.reduce((sum, record) => {
-      if (!record.clock_in_at || !record.clock_out_at) return sum;
-      return sum + Math.max(0, (new Date(record.clock_out_at).getTime() - new Date(record.clock_in_at).getTime()) / 3600000);
-    }, 0)
-  }), [records]);
-
-  return (
-    <>
-      <SectionHeader
-        eyebrow="ATTENDANCE"
-        title="考勤记录"
-        description="查询、修正和导出员工的上班、退勤及当日工作说明。"
-        actions={
-          <a
-            className="button primary"
-            href={`/api/admin/attendance/export.xlsx?start=${start}&end=${end}&employeeId=${employeeId}`}
-          >
-            <Download size={16} /> 导出 Excel
-          </a>
-        }
-      />
-      <div className="filter-bar">
-        <label><span>开始日期</span><input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></label>
-        <label><span>结束日期</span><input type="date" value={end} onChange={(e) => setEnd(e.target.value)} /></label>
-        <label>
-          <span>员工</span>
-          <select value={employeeId} onChange={(e) => setEmployeeId(Number(e.target.value))}>
-            <option value={0}>全部员工</option>
-            {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-          </select>
-        </label>
-        <button className="button secondary" type="button" onClick={() => void load()}><RefreshCw size={16} /> 查询</button>
-      </div>
-      <div className="metric-strip">
-        <div><span>完整打卡</span><strong>{summary.complete}</strong></div>
-        <div><span>缺少退勤</span><strong>{summary.missing}</strong></div>
-        <div><span>累计时长</span><strong>{summary.totalHours.toFixed(1)}h</strong></div>
-      </div>
-      <div className="data-table-card">
-        <table className="data-table">
-          <thead><tr><th>日期</th><th>员工</th><th>上班</th><th>退勤</th><th>时长</th><th>状态</th><th>说明</th><th /></tr></thead>
-          <tbody>
-            {records.map((record) => {
-              const duration = record.clock_in_at && record.clock_out_at
-                ? (new Date(record.clock_out_at).getTime() - new Date(record.clock_in_at).getTime()) / 3600000
-                : null;
-              return (
-                <tr key={record.id}>
-                  <td data-label="日期">{record.attendance_date}</td>
-                  <td data-label="员工"><strong>{record.name}</strong><small>{record.position}</small></td>
-                  <td data-label="上班">
-                    {formatAppTime(record.clock_in_at, displayTimeZone)}
-                  </td>
-                  <td data-label="退勤">
-                    {formatAppTime(record.clock_out_at, displayTimeZone)}
-                  </td>
-                  <td data-label="时长">{duration == null ? "—" : `${duration.toFixed(1)}h`}</td>
-                  <td data-label="状态">
-                    <span className={`table-status ${record.clock_out_at ? "success" : "warning"}`}>
-                      {record.clock_out_at ? "已退勤" : "缺少退勤"}
-                    </span>
-                  </td>
-                  <td data-label="说明" className="note-cell">{record.checkout_note || "—"}</td>
-                  <td><button className="icon-button" type="button" onClick={() => setEditing(record)}><Pencil size={15} /></button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {!records.length ? <div className="empty-panel">当前条件下没有考勤记录。</div> : null}
-      </div>
-      {editing ? (
-        <AttendanceEditModal
-          record={editing}
-          onClose={() => setEditing(null)}
-          onSave={async (value) => {
-            await api(`/api/admin/attendance/${editing.id}`, { method: "PUT", body: jsonBody(value) });
-            setEditing(null);
-            await load();
-          }}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function toLocalInput(value: string | null, timeZone: AppTimeZone) {
-  if (!value) return "";
-  const date = new Date(value);
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false, hourCycle: "h23"
-  }).formatToParts(date);
-  const map = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
-  return `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}`;
-}
-
-function AttendanceEditModal({
-  record,
-  onClose,
-  onSave
-}: {
-  record: AttendanceRecord;
-  onClose: () => void;
-  onSave: (value: { clockInAt: string; clockOutAt: string; checkoutNote: string; reason: string }) => Promise<void>;
-}) {
-  const { displayTimeZone } = useAppTimeZone();
-  const [clockInAt, setClockInAt] = useState(toLocalInput(record.clock_in_at, displayTimeZone));
-  const [clockOutAt, setClockOutAt] = useState(toLocalInput(record.clock_out_at, displayTimeZone));
-  const [checkoutNote, setCheckoutNote] = useState(record.checkout_note);
-  const [reason, setReason] = useState("");
-  const [saving, setSaving] = useState(false);
-  return (
-    <Modal
-      title={`修正考勤 · ${record.name}`}
-      onClose={onClose}
-      footer={
-        <>
-          <button className="button ghost" type="button" onClick={onClose}>取消</button>
-          <button
-            className="button primary"
-            type="button"
-            disabled={saving || !reason.trim()}
-            onClick={async () => {
-              setSaving(true);
-              await onSave({ clockInAt, clockOutAt, checkoutNote, reason });
-            }}
-          ><Save size={16} /> 保存修正</button>
-        </>
-      }
-    >
-      <div className="info-note">{record.attendance_date} · 所有修正都会保留修改前后记录。</div>
-      <label className="field"><span>上班时间</span><input type="datetime-local" value={clockInAt} onChange={(e) => setClockInAt(e.target.value)} /></label>
-      <label className="field"><span>退勤时间</span><input type="datetime-local" value={clockOutAt} onChange={(e) => setClockOutAt(e.target.value)} /></label>
-      <label className="field"><span>退勤说明</span><textarea rows={3} value={checkoutNote} onChange={(e) => setCheckoutNote(e.target.value)} /></label>
-      <label className="field"><span>修正原因（必填）</span><textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} /></label>
-    </Modal>
   );
 }
 

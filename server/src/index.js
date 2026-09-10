@@ -9,6 +9,7 @@ import helmet from "helmet";
 import multer from "multer";
 import { config } from "./config.js";
 import { audit, db, setting } from "./db.js";
+import { buildAttendanceMonth, correctAttendance } from "./attendance.js";
 import {
   canReadMedia,
   clearAdminSession,
@@ -40,8 +41,7 @@ import {
   setTimeZoneConfig,
   validateTimeZone,
   validateTimeRange,
-  validateWeekdays,
-  zonedLocalDateTimeToIso
+  validateWeekdays
 } from "./utils.js";
 
 const app = express();
@@ -79,17 +79,6 @@ function requireString(value, name, max = 100) {
   const result = safeText(value, max);
   if (!result) throw httpError(400, `${name}不能为空`);
   return result;
-}
-
-function normalizeDateTime(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return null;
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(text)) {
-    return zonedLocalDateTimeToIso(text);
-  }
-  const date = new Date(text);
-  if (Number.isNaN(date.getTime())) throw httpError(400, "日期时间格式无效");
-  return date.toISOString();
 }
 
 function adminLog(action, entityType, entityId, detail = "") {
@@ -694,43 +683,32 @@ app.get("/api/admin/attendance", (req, res, next) => {
   }
 });
 
+app.get("/api/admin/attendance/calendar", (req, res, next) => {
+  try {
+    const employeeId = Number(req.query.employeeId ?? 0);
+    if (!Number.isSafeInteger(employeeId) || employeeId < 0) throw httpError(400, "员工无效");
+    res.json(buildAttendanceMonth(employeeId, req.query.month));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/admin/attendance", (req, res, next) => {
+  try {
+    const employeeId = Number(req.body?.employeeId);
+    if (!Number.isSafeInteger(employeeId) || employeeId <= 0) throw httpError(400, "员工无效");
+    const attendance = correctAttendance({ employeeId, date: req.body?.date, value: req.body });
+    res.status(201).json({ attendance });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.put("/api/admin/attendance/:id", (req, res, next) => {
   try {
-    const previous = db.prepare("SELECT * FROM attendance WHERE id = ?").get(req.params.id);
-    if (!previous) throw httpError(404, "考勤记录不存在");
-    const reason = requireString(req.body?.reason, "修正原因", 500);
-    const nextValue = {
-      clock_in_at: normalizeDateTime(req.body?.clockInAt),
-      clock_out_at: normalizeDateTime(req.body?.clockOutAt),
-      checkout_note: String(req.body?.checkoutNote ?? "").trim().slice(0, 2000)
-    };
-    if (
-      nextValue.clock_in_at &&
-      nextValue.clock_out_at &&
-      new Date(nextValue.clock_out_at) < new Date(nextValue.clock_in_at)
-    ) {
-      throw httpError(400, "退勤时间不能早于上班时间");
-    }
-    const now = appDateTime();
-    db.transaction(() => {
-      db.prepare(
-        `UPDATE attendance
-         SET clock_in_at = ?, clock_out_at = ?, checkout_note = ?, updated_at = ?
-         WHERE id = ?`
-      ).run(
-        nextValue.clock_in_at,
-        nextValue.clock_out_at,
-        nextValue.checkout_note,
-        now,
-        previous.id
-      );
-      db.prepare(
-        `INSERT INTO attendance_corrections (
-           attendance_id, before_json, after_json, reason, created_at
-         ) VALUES (?, ?, ?, ?, ?)`
-      ).run(previous.id, JSON.stringify(previous), JSON.stringify(nextValue), reason, now);
-    })();
-    adminLog("correct", "attendance", previous.id, reason);
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) throw httpError(400, "考勤记录无效");
+    correctAttendance({ id, value: req.body });
     res.json({ ok: true });
   } catch (error) {
     next(error);
