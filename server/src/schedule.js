@@ -1,5 +1,6 @@
 import { db, setting } from "./db.js";
 import { weekdayForDate } from "./utils.js";
+import { attendanceSummary, enrichAttendanceRows } from "./attendanceTiming.js";
 
 const latestVersionsForDate = db.prepare(`
   SELECT version.*
@@ -72,9 +73,9 @@ export function buildDaySchedule(date, { includeInactive = false, currentEmploye
     )
     .all(date);
   const attendanceRows = new Map(
-    db
+    enrichAttendanceRows(db
       .prepare("SELECT * FROM attendance WHERE attendance_date = ?")
-      .all(date)
+      .all(date))
       .map((row) => [row.employee_id, row])
   );
 
@@ -135,16 +136,10 @@ export function buildDaySchedule(date, { includeInactive = false, currentEmploye
           (a, b) => a.startHour - b.startHour || a.endHour - b.endHour
         ),
         attendance: {
-          status: !attendance?.clock_in_at
-            ? "not_started"
-            : attendance.clock_out_at
-              ? "checked_out"
-              : "working",
+          status: attendanceSummary(attendance).status,
           ...(isCurrent
             ? {
-                clockInAt: attendance?.clock_in_at ?? null,
-                clockOutAt: attendance?.clock_out_at ?? null,
-                checkoutNote: attendance?.checkout_note ?? ""
+                ...attendanceSummary(attendance)
               }
             : {})
         }
@@ -169,4 +164,3 @@ export function mapTemplate(row) {
     updatedAt: row.updated_at
   };
 }
-

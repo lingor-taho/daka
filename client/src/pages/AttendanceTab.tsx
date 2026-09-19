@@ -6,7 +6,7 @@ import { formatAppTime, todayInTimeZone, useAppTimeZone, type AppTimeZone } from
 import type { AttendanceDay, AttendanceDayStatus, AttendanceMonth, Employee } from "../types";
 
 const statusLabels: Record<AttendanceDayStatus, string> = {
-  complete: "正常出勤", working: "工作中", incomplete: "打卡不全", absent: "缺勤",
+  complete: "正常出勤", working: "工作中", paused: "暂停中", incomplete: "打卡不全", absent: "缺勤",
   rest: "休息日", unscheduled: "无任务", pending: "待打卡", future: "未到日期", untracked: "未加入"
 };
 const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -17,11 +17,11 @@ function shiftMonth(month: string, delta: number) {
 }
 
 function hoursWorked(day: AttendanceDay) {
-  if (!day.record?.clock_in_at || !day.record.clock_out_at) return 0;
-  return Math.max(0, (Date.parse(day.record.clock_out_at) - Date.parse(day.record.clock_in_at)) / 3600000);
+  return (day.record?.work_seconds ?? 0) / 3600;
 }
 
 function dayLabel(day: AttendanceDay) {
+  if (day.status === "incomplete" && day.record?.work_ended_at) return "暂停截止";
   return day.status === "incomplete" && day.record?.clock_in_at ? "缺少退勤" : statusLabels[day.status];
 }
 
@@ -127,7 +127,7 @@ export default function AttendanceTab() {
           <div className="attendance-calendar-person"><strong>{data.employee.name}</strong><span>{data.employee.position}</span></div>
         </div>
         <div className="attendance-calendar-legend" aria-label="日历颜色说明">
-          <span><i className="legend-attended" />正常 / 工作中</span><span><i className="legend-absent" />缺勤</span><span><i className="legend-incomplete" />打卡不全</span><span><i className="legend-neutral" />休息 / 无任务</span>
+          <span><i className="legend-attended" />正常 / 工作中</span><span><i className="legend-absent" />缺勤</span><span><i className="legend-incomplete" />暂停 / 打卡不全</span><span><i className="legend-neutral" />休息 / 无任务</span>
         </div>
         <div className="attendance-weekdays" aria-hidden="true">{weekdays.map(day => <span key={day}>{day}</span>)}</div>
         <div className="attendance-calendar-grid">
@@ -141,13 +141,14 @@ export default function AttendanceTab() {
               aria-label={description} title={description} aria-current={day.date === data.today ? "date" : undefined} onClick={() => setEditing({ day, employee: data.employee! })}>
               <span className="attendance-day-top"><strong>{Number(day.date.slice(-2))}</strong>{day.date === data.today ? <em>今</em> : null}</span>
               <span className="attendance-day-status">{label}</span>
-              {day.record?.clock_in_at || day.record?.clock_out_at ? <span className="attendance-day-times"><span><i>上 </i>{clockIn}</span><span><i>下 </i>{clockOut}</span></span> : null}
+              {day.record?.clock_in_at || day.record?.clock_out_at ? <span className="attendance-day-times"><span><i>上 </i>{clockIn}</span><span><i>{!day.record?.clock_out_at && day.record?.work_ended_at ? "截 " : "下 "}</i>{formatAppTime(day.record?.clock_out_at || day.record?.work_ended_at, displayTimeZone)}</span></span> : null}
+              {day.record?.work_seconds != null ? <span className="attendance-day-note">净时长 {hoursWorked(day).toFixed(1)}h</span> : null}
               {day.record?.checkout_note ? <span className="attendance-day-note">有说明</span> : null}
             </button>;
           })}
           {Array.from({ length: trailing }, (_, i) => <div className="attendance-day-padding" key={`tail-${i}`} aria-hidden="true" />)}
         </div>
-        <p className="attendance-calendar-help">缺勤仅统计已过去、有任务且未打上班卡的日期。点击日期可查看详情或补录。</p>
+        <p className="attendance-calendar-help">时长已扣除暂停时段；未退勤时，以最后暂停时间截止，恢复后的时长待退勤后结算。缺勤仅统计已过去、有任务且未打上班卡的日期。点击日期可查看详情或补录。</p>
       </section>
     </> : <div className="empty-panel" role="status">{loading ? "正在加载考勤日历…" : error ? "请刷新重试。" : "暂无员工，请先添加员工。"}</div>}
     {editing ? <AttendanceEditModal key={`${editing.employee.id}-${editing.day.date}`} day={editing.day} employee={editing.employee} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); setLoading(true); setRefresh(n => n + 1); }} /> : null}
@@ -185,6 +186,14 @@ function AttendanceEditModal({ day, employee, onClose, onSaved }: { day: Attenda
   </>}>
     <div className="info-note">{day.date} · {displayTimeZone === "Asia/Tokyo" ? "日本时间" : "中国时间"} · 所有修正都会保留修改前后记录。</div>
     {error ? <div className="form-error" role="alert">{error}</div> : null}
+    {day.record?.pauses.length ? <div className="attendance-pause-details">
+      <strong>暂停 / 恢复记录</strong>
+      {day.record.pauses.map(pause => <p key={pause.id}>
+        {formatAppTime(pause.paused_at, displayTimeZone)} → {pause.resumed_at ? formatAppTime(pause.resumed_at, displayTimeZone) : "未恢复"}
+      </p>)}
+      <p>净工作时长：{day.record.work_seconds == null ? "尚未截止" : `${hoursWorked(day).toFixed(2)} 小时`}。修改上下班时间不会删除暂停记录，仅扣除上下班区间内的暂停时间。</p>
+      {!day.record.clock_out_at && day.record.work_ended_at ? <p>尚未退勤，暂计至最后一次暂停 {formatAppTime(day.record.work_ended_at, displayTimeZone)}；恢复后的工作时间在退勤后计入。</p> : null}
+    </div> : null}
     <label className="field"><span>上班时间</span><input type="datetime-local" min={`${day.date}T00:00`} max={`${day.date}T23:59`} value={clockInAt} onChange={e => setClockInAt(e.target.value)} /></label>
     <label className="field"><span>退勤时间</span><input type="datetime-local" min={`${day.date}T00:00`} max={`${day.date}T23:59`} value={clockOutAt} onChange={e => setClockOutAt(e.target.value)} /></label>
     <label className="field"><span>退勤说明</span><textarea rows={3} maxLength={2000} value={checkoutNote} onChange={e => setCheckoutNote(e.target.value)} /></label>

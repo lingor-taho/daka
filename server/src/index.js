@@ -10,6 +10,7 @@ import multer from "multer";
 import { config } from "./config.js";
 import { audit, db, setting } from "./db.js";
 import { buildAttendanceMonth, correctAttendance } from "./attendance.js";
+import { changeAttendanceState, enrichAttendanceRows } from "./attendanceTiming.js";
 import {
   canReadMedia,
   clearAdminSession,
@@ -154,27 +155,19 @@ app.get("/api/front/today", (req, res, next) => {
   }
 });
 
-app.post("/api/front/checkout", requireDevice, (req, res, next) => {
+app.post(["/api/front/pause", "/api/front/resume", "/api/front/checkout"], requireDevice, (req, res, next) => {
   try {
-    const today = appDate();
-    const now = appDateTime();
-    const note = String(req.body?.note ?? "").trim().slice(0, 2000);
-    db.prepare(
-      `INSERT INTO attendance (
-         employee_id, attendance_date, clock_in_at, source_device_id, updated_at
-       ) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(employee_id, attendance_date) DO NOTHING`
-    ).run(req.device.employee_id, today, now, req.device.id, now);
-    const result = db.prepare(
-      `UPDATE attendance
-       SET clock_out_at = ?, checkout_note = ?, updated_at = ?
-       WHERE employee_id = ? AND attendance_date = ? AND clock_out_at IS NULL`
-    ).run(now, note, now, req.device.employee_id, today);
-    const attendance = db
-      .prepare("SELECT * FROM attendance WHERE employee_id = ? AND attendance_date = ?")
-      .get(req.device.employee_id, today);
-    res.json({ alreadyCheckedOut: result.changes === 0, attendance });
+    res.json(changeAttendanceState({
+      employeeId: req.device.employee_id,
+      date: req.body?.date,
+      action: req.path.split("/").at(-1),
+      revision: req.body?.revision,
+      note: req.body?.note
+    }));
   } catch (error) {
+    if (error.code === "ATTENDANCE_STATE_CHANGED") {
+      return res.status(409).json({ code: error.code, message: error.message, summary: error.summary });
+    }
     next(error);
   }
 });
@@ -249,7 +242,8 @@ app.get("/api/admin/dashboard", (_req, res) => {
   const counts = {
     employees: db.prepare("SELECT COUNT(*) AS count FROM employees WHERE active = 1").get().count,
     pendingDevices: db.prepare("SELECT COUNT(*) AS count FROM devices WHERE enabled = 0 OR employee_id IS NULL").get().count,
-    working: db.prepare("SELECT COUNT(*) AS count FROM attendance WHERE attendance_date = ? AND clock_in_at IS NOT NULL AND clock_out_at IS NULL").get(today).count,
+    working: db.prepare(`SELECT COUNT(*) AS count FROM attendance WHERE attendance_date = ? AND clock_in_at IS NOT NULL AND clock_out_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM attendance_pauses p WHERE p.attendance_id = attendance.id AND p.resumed_at IS NULL)`).get(today).count,
     checkedOut: db.prepare("SELECT COUNT(*) AS count FROM attendance WHERE attendance_date = ? AND clock_out_at IS NOT NULL").get(today).count
   };
   res.json({ date: today, counts, schedule: buildDaySchedule(today) });
@@ -677,7 +671,7 @@ app.get("/api/admin/attendance", (req, res, next) => {
          ORDER BY attendance.attendance_date DESC, employees.display_order, employees.id`
       )
       .all(start, end, employeeId, employeeId);
-    res.json({ attendance: rows });
+    res.json({ attendance: enrichAttendanceRows(rows) });
   } catch (error) {
     next(error);
   }
@@ -740,17 +734,14 @@ app.get("/api/admin/attendance/export.xlsx", asyncRoute(async (req, res) => {
     { header: `上班时间（${displayTimeZoneLabel}）`, key: "clockIn", width: 24 },
     { header: `退勤时间（${displayTimeZoneLabel}）`, key: "clockOut", width: 24 },
     { header: "工作时长（小时）", key: "duration", width: 18 },
+    { header: "扣除暂停（小时）", key: "pausedDuration", width: 18 },
+    { header: `计时截止（${displayTimeZoneLabel}）`, key: "workEndedAt", width: 24 },
+    { header: "暂停 / 恢复记录", key: "pauses", width: 65 },
     { header: "状态", key: "status", width: 14 },
     { header: "退勤说明", key: "note", width: 40 }
   ];
-  for (const row of rows) {
-    const duration =
-      row.clock_in_at && row.clock_out_at
-        ? Math.max(
-            0,
-            (new Date(row.clock_out_at).getTime() - new Date(row.clock_in_at).getTime()) / 3600000
-          )
-        : null;
+  for (const row of enrichAttendanceRows(rows)) {
+    const duration = row.work_seconds == null ? null : row.work_seconds / 3600;
     sheet.addRow({
       date: row.attendance_date,
       name: row.name,
@@ -758,7 +749,10 @@ app.get("/api/admin/attendance/export.xlsx", asyncRoute(async (req, res) => {
       clockIn: formatAppDateTime(row.clock_in_at),
       clockOut: formatAppDateTime(row.clock_out_at),
       duration: duration == null ? "" : Number(duration.toFixed(2)),
-      status: !row.clock_in_at ? "未打卡" : row.clock_out_at ? "已退勤" : "缺少退勤",
+      pausedDuration: row.pause_seconds == null ? "" : Number((row.pause_seconds / 3600).toFixed(2)),
+      workEndedAt: formatAppDateTime(row.work_ended_at),
+      pauses: row.pauses.map(p => `${formatAppDateTime(p.paused_at)} → ${p.resumed_at ? formatAppDateTime(p.resumed_at) : "未恢复"}`).join("；"),
+      status: !row.clock_in_at ? "未打卡" : row.clock_out_at ? "已退勤" : row.work_ended_at ? "未退勤（最后暂停截止）" : "缺少退勤",
       note: row.checkout_note
     });
   }

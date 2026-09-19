@@ -1,4 +1,5 @@
 import { audit, db } from "./db.js";
+import { enrichAttendanceRows } from "./attendanceTiming.js";
 import { appDate, appDateTime, httpError, parseDate, safeText, weekdayForDate, zonedLocalDateTimeToIso } from "./utils.js";
 
 export function monthDates(month) {
@@ -30,8 +31,8 @@ export function buildAttendanceMonth(employeeId, requestedMonth, today = appDate
   const dates = monthDates(month);
   const start = dates[0];
   const end = dates.at(-1);
-  const records = new Map(db.prepare("SELECT * FROM attendance WHERE employee_id = ? AND attendance_date BETWEEN ? AND ?")
-    .all(employee.id, start, end).map(row => [row.attendance_date, { ...row, name: employee.name, position: employee.position }]));
+  const records = new Map(enrichAttendanceRows(db.prepare("SELECT * FROM attendance WHERE employee_id = ? AND attendance_date BETWEEN ? AND ?")
+    .all(employee.id, start, end)).map(row => [row.attendance_date, { ...row, name: employee.name, position: employee.position }]));
   const holidays = new Map(db.prepare("SELECT holiday_date, name FROM holidays WHERE holiday_date BETWEEN ? AND ?")
     .all(start, end).map(row => [row.holiday_date, row.name]));
   const additions = new Set(db.prepare("SELECT DISTINCT task_date FROM additional_tasks WHERE employee_id = ? AND task_date BETWEEN ? AND ?")
@@ -59,7 +60,7 @@ export function buildAttendanceMonth(employeeId, requestedMonth, today = appDate
     let status;
     if (date > today) status = "future";
     else if (record?.clock_in_at && record?.clock_out_at) status = "complete";
-    else if (record?.clock_in_at) status = date === today ? "working" : "incomplete";
+    else if (record?.clock_in_at) status = date === today ? (record.paused_at ? "paused" : "working") : "incomplete";
     else if (record?.clock_out_at) status = "incomplete";
     else if (date < joinedDate) status = "untracked";
     else if (holiday && !additions.has(date)) status = "rest";

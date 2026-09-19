@@ -124,6 +124,17 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_attendance_date_employee
     ON attendance(attendance_date, employee_id);
 
+  CREATE TABLE IF NOT EXISTS attendance_pauses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    attendance_id INTEGER NOT NULL REFERENCES attendance(id) ON DELETE CASCADE,
+    paused_at TEXT NOT NULL,
+    resumed_at TEXT,
+    CHECK (resumed_at IS NULL OR resumed_at >= paused_at)
+  );
+  CREATE INDEX IF NOT EXISTS idx_attendance_pauses_record ON attendance_pauses(attendance_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_one_open_pause
+    ON attendance_pauses(attendance_id) WHERE resumed_at IS NULL;
+
   CREATE TABLE IF NOT EXISTS attendance_corrections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     attendance_id INTEGER NOT NULL REFERENCES attendance(id) ON DELETE CASCADE,

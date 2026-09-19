@@ -1,10 +1,13 @@
 import { CheckCircle2, Clock3, LogOut, Plus } from "lucide-react";
 import type { DaySchedule, EmployeeSchedule, Task } from "../types";
+import AttendanceActions from "./AttendanceActions";
 
 interface GanttBoardProps {
   schedule: DaySchedule;
   onTaskClick: (task: Task, employee: EmployeeSchedule) => void;
   onCheckout?: (employee: EmployeeSchedule) => void;
+  onPauseToggle?: () => void;
+  attendanceBusy?: boolean;
   onAddTask?: (employee: EmployeeSchedule) => void;
   admin?: boolean;
 }
@@ -29,6 +32,7 @@ function layoutTasks(tasks: Task[]) {
 function attendanceLabel(employee: EmployeeSchedule) {
   if (employee.attendance.status === "checked_out") return "已退勤";
   if (employee.attendance.status === "working") return "工作中";
+  if (employee.attendance.status === "paused") return "暂停中";
   return "未打卡";
 }
 
@@ -36,6 +40,8 @@ export default function GanttBoard({
   schedule,
   onTaskClick,
   onCheckout,
+  onPauseToggle,
+  attendanceBusy,
   onAddTask,
   admin
 }: GanttBoardProps) {
@@ -70,7 +76,7 @@ export default function GanttBoard({
         {schedule.employees.map((employee) => {
           const laidOut = layoutTasks(employee.tasks);
           const laneCount = Math.max(1, ...laidOut.map((item) => item.lane + 1));
-          const rowHeight = Math.max(68, laneCount * 48 + 16);
+          const rowHeight = Math.max(employee.isCurrent && onPauseToggle ? 96 : 68, laneCount * 48 + 16);
           return (
             <div className={`gantt-row-wrap ${employee.isCurrent ? "is-current" : ""}`} key={employee.id}>
               <div className="gantt-person" style={{ height: rowHeight }}>
@@ -122,6 +128,8 @@ export default function GanttBoard({
                     <Plus size={15} /> 新任务
                   </button>
                 ) : employee.isCurrent && employee.attendance.status !== "checked_out" && onCheckout ? (
+                  onPauseToggle ? <AttendanceActions paused={employee.attendance.status === "paused"} busy={attendanceBusy}
+                    onPauseToggle={onPauseToggle} onCheckout={() => onCheckout(employee)} /> :
                   <button className="checkout-button" type="button" onClick={() => onCheckout(employee)}>
                     <LogOut size={16} /> 退勤
                   </button>
@@ -146,4 +154,3 @@ export default function GanttBoard({
     </div>
   );
 }
-

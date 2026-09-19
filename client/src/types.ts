@@ -14,10 +14,12 @@ export interface Task {
 }
 
 export interface AttendanceSummary {
-  status: "not_started" | "working" | "checked_out";
+  status: "not_started" | "working" | "paused" | "checked_out";
   clockInAt?: string | null;
   clockOutAt?: string | null;
   checkoutNote?: string;
+  pausedAt?: string | null;
+  pauseRevision?: string;
 }
 
 export interface EmployeeSchedule {
@@ -85,9 +87,14 @@ export interface AttendanceRecord {
   clock_out_at: string | null;
   checkout_note: string;
   updated_at: string;
+  paused_at: string | null;
+  work_seconds: number | null;
+  pause_seconds: number | null;
+  work_ended_at: string | null;
+  pauses: { id: number; paused_at: string; resumed_at: string | null }[];
 }
 
-export type AttendanceDayStatus = "complete" | "working" | "incomplete" | "absent" | "rest" | "unscheduled" | "pending" | "future" | "untracked";
+export type AttendanceDayStatus = "complete" | "working" | "paused" | "incomplete" | "absent" | "rest" | "unscheduled" | "pending" | "future" | "untracked";
 
 export interface AttendanceDay {
   date: string;

@@ -1242,7 +1242,7 @@ a {
   font-size: 10px;
 }
 
-.mobile-checkout {
+.mobile-attendance-actions {
   display: none;
 }
 
@@ -1529,7 +1529,44 @@ a {
 }
 
 .state-working { color: #9a672f; }
+.state-paused { color: #b15c24; }
 .state-checked_out { color: var(--green-700); }
+
+.attendance-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.attendance-actions .checkout-button,
+.pause-button {
+  min-height: 36px;
+  padding: 0 8px;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.pause-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d9bfa4;
+  border-radius: 10px;
+  color: #8b5324;
+  background: #fff8ed;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pause-button.is-paused {
+  color: var(--green-800);
+  background: #e0f3e9;
+  border-color: #aad2bf;
+}
+
+.pause-notice { background: #fff8ed; color: #8b5324; }
+.attendance-pause-details { margin: 14px 0; padding: 12px; border-radius: 10px; background: #fff8ed; }
+.attendance-pause-details p { margin: 6px 0; font-size: 13px; }
 
 /* Modal / rich text */
 .modal-backdrop {
@@ -2489,6 +2526,7 @@ a {
 .attendance-day-times i { font-style: normal; opacity: 0.7; font-size: 10px; }
 .attendance-day-note { font-size: 10px; opacity: 0.75; }
 .attendance-day-complete, .attendance-day-working { color: #23745e; background: #edf8f2; }
+.attendance-day-paused { background: #fff5e8; color: #98571e; }
 .attendance-day-absent { color: #b54d4d; background: #fff0ef; }
 .attendance-day-incomplete { color: #96652c; background: #fff6e9; }
 .attendance-day-future, .attendance-day-untracked { color: #b4bfba; background: #fcfdfc; }
@@ -2986,22 +3024,29 @@ a {
     gap: 5px;
   }
 
-  .mobile-checkout {
-    min-height: 50px;
-    padding: 0 22px;
+  .attendance-actions {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .attendance-actions > button { min-height: 40px; }
+
+  .mobile-attendance-actions {
     position: fixed;
     right: 16px;
-    bottom: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     z-index: 40;
-    border: 0;
-    border-radius: 16px;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    color: white;
-    background: var(--green-800);
-    box-shadow: 0 15px 35px rgba(14, 91, 78, 0.3);
-    font-weight: 700;
+  }
+
+  .mobile-attendance-actions > button {
+    min-height: 50px;
+    padding: 0 20px;
+    border-radius: 16px;
+    font-size: 14px;
+    box-shadow: 0 15px 35px rgba(14, 91, 78, 0.15);
   }
 
   .gate-card {

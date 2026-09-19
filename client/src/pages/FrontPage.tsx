@@ -8,14 +8,15 @@ import {
   ShieldCheck,
   Sparkles
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api, getDeviceCode, jsonBody } from "../api";
 import CheckoutOutro from "../components/CheckoutOutro";
 import DailyIntro from "../components/DailyIntro";
 import GanttBoard from "../components/GanttBoard";
+import AttendanceActions from "../components/AttendanceActions";
 import Modal from "../components/Modal";
 import { formatAppTime, useAppTimeZone, type AppTimeZone } from "../timeZone";
-import type { DaySchedule, EmployeeSchedule, Task } from "../types";
+import type { AttendanceSummary, DaySchedule, EmployeeSchedule, Task } from "../types";
 
 interface FrontPayload {
   displayTimeZone: AppTimeZone;
@@ -51,6 +52,7 @@ export default function FrontPage() {
   const [checkoutEmployee, setCheckoutEmployee] = useState<EmployeeSchedule | null>(null);
   const [checkoutNote, setCheckoutNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const attendanceBusy = useRef(false);
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(new Date());
 
@@ -86,44 +88,57 @@ export default function FrontPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  async function checkout() {
+  function updateAttendance(summary: AttendanceSummary) {
+    setPayload(current => !current ? current : {
+      ...current, schedule: { ...current.schedule, employees: current.schedule.employees.map(employee =>
+        employee.isCurrent ? { ...employee, attendance: summary } : employee) }
+    });
+  }
+
+  async function pauseToggle() {
+    if (attendanceBusy.current || !payload || !currentEmployee) return;
+    attendanceBusy.current = true;
     setSubmitting(true);
+    setMessage("");
+    try {
+      const action = currentEmployee.attendance.status === "paused" ? "resume" : "pause";
+      const result = await api<{ summary: AttendanceSummary }>(`/api/front/${action}`, {
+        method: "POST", device: true,
+        body: jsonBody({ date: payload.schedule.date, revision: currentEmployee.attendance.pauseRevision })
+      });
+      updateAttendance(result.summary);
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "ATTENDANCE_STATE_CHANGED") {
+        updateAttendance((error.payload as { summary: AttendanceSummary }).summary);
+      }
+      setMessage(error instanceof Error ? error.message : "操作失败，请重试");
+    } finally {
+      attendanceBusy.current = false;
+      setSubmitting(false);
+    }
+  }
+
+  async function checkout() {
+    if (attendanceBusy.current || !payload) return;
+    attendanceBusy.current = true;
+    setSubmitting(true);
+    setMessage("");
     try {
       const result = await api<{
         alreadyCheckedOut: boolean;
-        attendance: { clock_out_at: string; checkout_note: string };
+        summary: AttendanceSummary;
       }>("/api/front/checkout", {
         method: "POST",
         device: true,
-        body: jsonBody({ note: checkoutNote })
+        body: jsonBody({ note: checkoutNote, date: payload.schedule.date })
       });
-      setPayload((current) => {
-        if (!current || !checkoutEmployee) return current;
-        return {
-          ...current,
-          schedule: {
-            ...current.schedule,
-            employees: current.schedule.employees.map((employee) =>
-              employee.id === checkoutEmployee.id
-                ? {
-                    ...employee,
-                    attendance: {
-                      ...employee.attendance,
-                      status: "checked_out",
-                      clockOutAt: result.attendance.clock_out_at,
-                      checkoutNote: result.attendance.checkout_note
-                    }
-                  }
-                : employee
-            )
-          }
-        };
-      });
+      updateAttendance(result.summary);
       setCheckoutEmployee(null);
       setCheckoutNote("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "退勤失败");
     } finally {
+      attendanceBusy.current = false;
       setSubmitting(false);
     }
   }
@@ -227,7 +242,7 @@ export default function FrontPage() {
               hourCycle: "h23"
             }).format(now)}
           </strong>
-          <button type="button" className="refresh-button" onClick={() => void load()}>
+          <button type="button" className="refresh-button" disabled={submitting} onClick={() => void load()}>
             <RefreshCw size={16} /> 手动刷新
           </button>
         </div>
@@ -267,6 +282,9 @@ export default function FrontPage() {
       {message ? <div className="inline-alert">{message}</div> : null}
 
       <section className="board-section">
+        {currentEmployee?.attendance.status === "paused" ? <div className="inline-alert pause-notice" role="status">
+          已于 {formatAppTime(currentEmployee.attendance.pausedAt, displayTimeZone)} 暂停计时，回来后请点击“恢复”。暂停期间不计入工作时长。
+        </div> : null}
         <div className="section-heading">
           <div>
             <span className="eyebrow">DAILY GANTT</span>
@@ -279,6 +297,8 @@ export default function FrontPage() {
         </div>
         <GanttBoard
           schedule={payload.schedule}
+          onPauseToggle={() => void pauseToggle()}
+          attendanceBusy={submitting}
           onTaskClick={(task, employee) => setSelectedTask({ task, employee })}
           onCheckout={(employee) => {
             setCheckoutEmployee(employee);
@@ -288,16 +308,13 @@ export default function FrontPage() {
       </section>
 
       {currentEmployee ? (
-        <button
-          type="button"
-          className="mobile-checkout"
-          onClick={() => {
+        <AttendanceActions mobile paused={currentEmployee.attendance.status === "paused"} busy={submitting}
+          onPauseToggle={() => void pauseToggle()}
+          onCheckout={() => {
             setCheckoutEmployee(currentEmployee ?? null);
             setCheckoutNote("");
           }}
-        >
-          <LogOut size={18} /> 退勤
-        </button>
+        />
       ) : null}
 
       <footer className="front-footer">
@@ -362,7 +379,9 @@ export default function FrontPage() {
           <div className="checkout-summary">
             <strong>{checkoutEmployee.name}</strong>
             <span>退勤后员工本人不能撤销或修改，如有误操作请联系管理员。</span>
+            <span>当日工作时长会自动扣除所有暂停时段；暂停中退勤，不会把暂停后的时间算入工作时长。</span>
           </div>
+          {message ? <div className="form-error" role="alert">{message}</div> : null}
           <label className="field">
             <span>当日工作说明（选填）</span>
             <textarea
